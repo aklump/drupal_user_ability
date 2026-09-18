@@ -1,0 +1,7 @@
+services:
+  user_ability.checker:
+    class: Drupal\user_ability\AbilityChecker
+    arguments: ['@logger.channel.user_ability']
+  logger.channel.user_ability:
+    parent: logger.channel_base
+    arguments: ['user_ability']
