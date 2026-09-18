@@ -1,0 +1,14 @@
+{
+  "name": "aklump_drupal/user_ability",
+  "description": "Generic mechanism for asking \"can this user do X\" — the ability check dispatcher, its contracts, and their tagged-service registration.",
+  "type": "drupal-custom-module",
+  "autoload-dev": {
+    "psr-4": {
+      "Drupal\\Tests\\user_ability\\": "tests/src/"
+    }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  },
+  "require": {}
+}
