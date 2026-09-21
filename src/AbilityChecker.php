@@ -22,7 +22,7 @@ use Psr\Log\LoggerInterface;
  * ::getAnonymousUser() are static calls this class deliberately isolates
  * to one method, but they still can't be exercised from a pure unit test.
  */
-class AbilityChecker {
+class AbilityChecker implements AbilityCheckerInterface {
 
   /**
    * Registered checks, keyed by fully-qualified ability case reference.
@@ -52,23 +52,7 @@ class AbilityChecker {
   }
 
   /**
-   * Decides whether the given account has the given ability.
-   *
-   * @param \Drupal\user_ability\AbilityInterface $ability
-   *   The ability being asked about.
-   * @param \Drupal\Core\Session\AccountInterface $account
-   *   The account asking. Normalized once to \Drupal\user\UserInterface
-   *   before being handed to the check.
-   * @param \Drupal\user_ability\AbilityContextInterface $context
-   *   What is being asked about, beyond the account.
-   *
-   * @return \Drupal\Core\Access\AccessResult
-   *   The cache-aware access result, with $account's user entity added as a
-   *   cacheable dependency whenever a check runs. AccessResult::forbidden()
-   *   with no cache metadata when no check is registered for the ability;
-   *   an uncacheable (max-age 0) AccessResult::forbidden() when the account
-   *   no longer resolves to a real user. Both cases are logged, never
-   *   thrown.
+   * {@inheritdoc}
    */
   public function check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult {
     $key = $ability::class . '::' . $ability->name;

@@ -2,6 +2,7 @@ services:
   user_ability.checker:
     class: Drupal\user_ability\AbilityChecker
     arguments: ['@logger.channel.user_ability']
+  Drupal\user_ability\AbilityCheckerInterface: '@user_ability.checker'
   logger.channel.user_ability:
     parent: logger.channel_base
     arguments: ['user_ability']

@@ -6,7 +6,7 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Session\AccountInterface;
 
 /**
- * Generic can()/abilityTo() delegation to an AbilityChecker.
+ * Generic can()/abilityTo() delegation to an AbilityCheckerInterface.
  *
  * A consumer supplies the checker and the account via the two abstract
  * methods below — this trait never assumes how either is obtained, so it
@@ -17,7 +17,7 @@ trait AbilityAwareTrait {
   /**
    * Describes this account's ability to perform an ability, cache-aware.
    *
-   * @see \Drupal\user_ability\AbilityChecker::check()
+   * @see \Drupal\user_ability\AbilityCheckerInterface::check()
    */
   public function abilityTo(AbilityInterface $ability, ?AbilityContextInterface $context = NULL): AccessResult {
     return $this->getAbilityChecker()->check($ability, $this->getAbilityAccount(), $context);
@@ -33,10 +33,10 @@ trait AbilityAwareTrait {
   }
 
   /**
-   * @return \Drupal\user_ability\AbilityChecker
+   * @return \Drupal\user_ability\AbilityCheckerInterface
    *   The checker to dispatch to.
    */
-  abstract protected function getAbilityChecker(): AbilityChecker;
+  abstract protected function getAbilityChecker(): AbilityCheckerInterface;
 
   /**
    * @return \Drupal\Core\Session\AccountInterface
