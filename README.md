@@ -120,7 +120,7 @@ Enabling it registers the `user_ability.checker` service and a `user_ability` lo
 - **Ability** (`AbilityInterface`): an enum naming a business capability. Name cases as verbs or verb phrases (`PublishArticle`, `DeleteComment`), never as a role or a permission. The interface requires `\JsonSerializable`, because `json_encode()` cannot serialize a pure enum and silently returns `FALSE` for the whole payload that contains one. A backed enum is allowed but not required.
 - **Context** (`AbilityContextInterface`): a value object carrying whatever a check needs beyond the account: a node, a group, a status. It is an empty marker interface; you define one class per shape.
 - **Check** (`AbilityCheckInterface`): one service per ability that composes permissions, roles, ownership and anything else into one `AccessResult`, with its cache metadata.
-- **Checker** (`AbilityChecker`, service `user_ability.checker`): the dispatcher. Its one public question is `check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult`. It loads the account as a user entity (the anonymous user for an anonymous account) before handing it to the check, which is why checks receive a `UserInterface`.
+- **Checker** (`AbilityCheckerInterface`, implemented by `AbilityChecker`, service `user_ability.checker`): the dispatcher. Its one public question is `check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult`. It loads the account as a user entity (the anonymous user for an anonymous account) before handing it to the check, which is why checks receive a `UserInterface`.
 
 ### Registering checks
 
@@ -197,7 +197,7 @@ $can_publish = \Drupal::service('user_ability.checker')
   ->isAllowed();
 ```
 
-The checker enforces the declared class before it calls the check, so `abilityAccess()` never has to validate the shape of `$context`. When you pass no context, the checker substitutes `NullContext`, so a check never receives `NULL`.
+The checker enforces the declared class before it calls the check, so `abilityAccess()` never has to validate the shape of `$context`. When you pass no context, the checker substitutes `NullContext`, so a check never receives `NULL`. It follows that calling a check which declares a specific context, such as `PublishArticleCheck`, without one throws `\InvalidArgumentException`, because `NullContext` is not a `NodeContext`.
 
 ### Cache metadata
 
@@ -210,17 +210,17 @@ If your site wraps accounts in its own object, `AbilityAwareTrait` gives it `can
 ```php
 use Drupal\Core\Session\AccountInterface;
 use Drupal\user_ability\AbilityAwareTrait;
-use Drupal\user_ability\AbilityChecker;
+use Drupal\user_ability\AbilityCheckerInterface;
 
 class MyWrappedUser {
   use AbilityAwareTrait;
 
   public function __construct(
     private readonly AccountInterface $account,
-    private readonly AbilityChecker $abilityChecker,
+    private readonly AbilityCheckerInterface $abilityChecker,
   ) {}
 
-  protected function getAbilityChecker(): AbilityChecker {
+  protected function getAbilityChecker(): AbilityCheckerInterface {
     return $this->abilityChecker;
   }
 
@@ -233,7 +233,7 @@ class MyWrappedUser {
 // $user->abilityTo(SiteAbility::PublishArticle, new NodeContext($node)) returns the result with its cache metadata.
 ```
 
-Use `abilityTo()` for anything that renders; `can()` discards the cache metadata. When the wrapper is itself a service, inject the checker with `@user_ability.checker`.
+Use `abilityTo()` for anything that renders; `can()` discards the cache metadata. When the wrapper is itself a service, inject the checker with `@user_ability.checker`. Type-hint `AbilityCheckerInterface`, as above, not the `AbilityChecker` class, so the service can be decorated or replaced; the interface is also aliased for autowiring.
 
 ### Route access
 
@@ -241,19 +241,19 @@ The module adds no route requirement of its own. To guard a route with an abilit
 
 ### When something is wrong
 
-| Situation                                                                                         | What happens                                                                                    |
-|---------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| No check is registered for the ability                                                            | `check()` returns `AccessResult::forbidden()` and logs a warning to the `user_ability` channel. |
-| The account no longer resolves to a user (deleted mid-request)                                    | `check()` returns `AccessResult::forbidden()` and logs a warning.                               |
-| The context is not an instance of the check's `getContextClass()`                                 | `check()` throws `\InvalidArgumentException`.                                                   |
-| A tagged service has no `ability` attribute, names an undefined case, or starts the case with `\` | The container build fails with a `\LogicException` naming the service.                          |
-| A service has more than one `ability_check` tag, or two services name the same ability            | The container build fails with a `\LogicException` naming the service(s).                       |
+| Situation                                                                                                 | What happens                                                                                    |
+|-----------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| No check is registered for the ability                                                                    | `check()` returns `AccessResult::forbidden()` and logs a warning to the `user_ability` channel. |
+| The account no longer resolves to a user (deleted mid-request)                                            | `check()` returns `AccessResult::forbidden()` and logs a warning.                               |
+| The context (or `NullContext`, when none is passed) is not an instance of the check's `getContextClass()` | `check()` throws `\InvalidArgumentException`.                                                   |
+| A tagged service has no `ability` attribute, names an undefined case, or starts the case with `\`         | The container build fails with a `\LogicException` naming the service.                          |
+| A service has more than one `ability_check` tag, or two services name the same ability                    | The container build fails with a `\LogicException` naming the service(s).                       |
 
-The forbidden results in this table carry no cache metadata.
+The no-check result carries no cache metadata, since it only changes when the container is rebuilt. The deleted-account result is uncacheable (max-age 0), because it describes one account, not every visitor.
 
 ### Running the tests
 
-The unit tests live in `tests/src/Unit/AbilityCheckerTest.php` and extend Drupal's `UnitTestCase`, so run them from a Drupal site that has the module installed:
+The unit tests live in `tests/src/Unit/`: `AbilityCheckerTest.php` covers the checker and `AbilityCheckCollectorPassTest.php` covers the tag rules. They extend Drupal's `UnitTestCase`, so run them from a Drupal site that has the module installed:
 
 ```bash
 vendor/bin/phpunit -c web/core web/modules/custom/user_ability/tests
