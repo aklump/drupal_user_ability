@@ -11,7 +11,7 @@ tags: ''
 
 ## Summary
 
-Access logic in a Drupal site tends to leak everywhere: a controller checks a permission, a form checks a role, a block checks ownership, and nobody can say in one place what "can publish an article" actually means. User Ability gives each business capability a name (an enum case such as `SiteAbility::PublishArticle`), puts the rule that decides it in one dedicated check service, and routes every question through a single dispatcher, `user_ability.checker`. The answer is always a cache-aware `AccessResult`, so it is safe to use in render arrays and route access. Each check also states its rule in plain language through `getBusinessRule()`, so a non-developer can confirm the system enforces what the business agreed to.
+Access logic in a Drupal site tends to leak everywhere: a controller checks a permission, a form checks a role, a block checks ownership, and nobody can say in one place what "can publish an article" actually means. User Ability gives each business capability a name (an enum case such as `SiteAbility::PublishArticle`), puts the rule that decides it in one dedicated check service, and routes every question through a single dispatcher, `user_ability.checker`. The answer is always a cache-aware `AccessResult`, so it is safe to use in render arrays and route access. Each check also states its rule in plain language through `getBusinessRule()`, written for whoever owns the business decision. The module does not display these statements itself; list them wherever you document or audit your abilities, so a non-developer can confirm the system enforces what the business agreed to.
 
 ## Quick Start
 
@@ -41,7 +41,6 @@ A check that decides it. This one needs no context beyond the user, so it declar
 namespace Drupal\my_module\AbilityCheck;
 
 use Drupal\Core\Access\AccessResult;
-use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\user\UserInterface;
 use Drupal\user_ability\AbilityCheckInterface;
@@ -58,9 +57,8 @@ final class ViewReportsCheck implements AbilityCheckInterface {
     return new TranslatableMarkup('Anyone allowed to access site reports can view reports.');
   }
 
-  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface {
-    return AccessResult::allowedIfHasPermission($user, 'access site reports')
-      ->addCacheableDependency($user);
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult {
+    return AccessResult::allowedIfHasPermission($user, 'access site reports');
   }
 
 }
@@ -95,7 +93,7 @@ For a user with the `access site reports` permission, `isAllowed()` returns `TRU
 ## Requirements
 
 - PHP 8.1 or newer. Abilities are PHP enums, and the module uses `readonly` properties.
-- Drupal 9 or 10 (`core_version_requirement: ^9 || ^10`).
+- Drupal 9 or 10. The module declares `core_version_requirement: ^9 || ^10`, so Drupal 11 will not enable it.
 
 ## Installation
 
@@ -126,8 +124,15 @@ Enabling it registers the `user_ability.checker` service and a `user_ability` lo
 
 - **Ability** (`AbilityInterface`): an enum naming a business capability. Name cases as verbs or verb phrases (`PublishArticle`, `DeleteComment`), never as a role or a permission. The interface requires `\JsonSerializable`, because `json_encode()` cannot serialize a pure enum and silently returns `FALSE` for the whole payload that contains one. A backed enum is allowed but not required.
 - **Context** (`AbilityContextInterface`): a value object carrying whatever a check needs beyond the account: a node, a group, a status. It is an empty marker interface; you define one class per shape.
-- **Check** (`AbilityCheckInterface`): one service per ability that composes permissions, roles, ownership and anything else into one `AccessResultInterface`, with its cache metadata.
-- **Checker** (`AbilityChecker`, service `user_ability.checker`): the dispatcher. A compiler pass collects every `ability_check`-tagged service at container-build time and registers it by its `ability` attribute.
+- **Check** (`AbilityCheckInterface`): one service per ability that composes permissions, roles, ownership and anything else into one `AccessResult`, with its cache metadata.
+- **Checker** (`AbilityChecker`, service `user_ability.checker`): the dispatcher. Its one public question is `check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult`. It loads the account as a user entity (the anonymous user for an anonymous account) before handing it to the check, which is why checks receive a `UserInterface`.
+
+### Registering checks
+
+A compiler pass collects every `ability_check`-tagged service at container-build time and registers it under its `ability` attribute. A check and an ability pair off one to one: `abilityAccess()` is never told which ability it is deciding, and `getBusinessRule()` states a single rule. The pass enforces that, and fails the container build with a `\LogicException` when:
+
+- **a service carries more than one `ability_check` tag.** Give each ability its own check class, so each has its own business rule.
+- **two services name the same ability.** Remove one of them, or give it an ability of its own.
 
 ### Checks that need a context
 
@@ -152,7 +157,6 @@ final class NodeContext implements AbilityContextInterface {
 namespace Drupal\my_module\AbilityCheck;
 
 use Drupal\Core\Access\AccessResult;
-use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\my_module\Context\NodeContext;
 use Drupal\user\UserInterface;
@@ -169,16 +173,14 @@ final class PublishArticleCheck implements AbilityCheckInterface {
     return new TranslatableMarkup('Editors can publish any article; authors can publish their own.');
   }
 
-  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface {
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult {
     $result = AccessResult::allowedIf($user->hasPermission('administer nodes') || $user->hasPermission('publish article content'))
-      ->addCacheableDependency($user)
       ->cachePerPermissions()
       ->addCacheableDependency($context->node);
 
     $is_author = (int) $context->node->getOwnerId() === (int) $user->id();
     return $result->orIf(
       AccessResult::allowedIf($is_author && $user->hasPermission('publish own article content'))
-        ->addCacheableDependency($user)
         ->addCacheableDependency($context->node)
         ->cachePerPermissions()
     );
@@ -186,6 +188,8 @@ final class PublishArticleCheck implements AbilityCheckInterface {
 
 }
 ```
+
+This check and the call below assume a `PublishArticle` case in `SiteAbility` and a tagged service for `PublishArticleCheck`, added the same way as in the Quick Start. The two publish permissions are examples; your site defines them.
 
 Pass the context as the third argument:
 
@@ -202,11 +206,11 @@ The checker enforces the declared class before it calls the check, so `abilityAc
 
 ### Cache metadata
 
-A check's result must carry its cache metadata: at least `->addCacheableDependency($user)`, plus `->cachePerPermissions()` when a permission is involved, `->addCacheableDependency()` for every context entity it reads, and `->setCacheMaxAge()` for time-based rules. `addCacheableDependency($user)` adds no cache tags for the anonymous user, so a check whose answer can vary for anonymous visitors must also call `->cachePerPermissions()` or `->cachePerUser()`.
+A check returns a concrete `AccessResult`, not just an `AccessResultInterface`, so the checker can add the user as a cacheable dependency to every result; a check never needs `->addCacheableDependency($user)` itself. The check must still carry the rest of its cache metadata: `->cachePerPermissions()` when a permission is involved, `->addCacheableDependency()` for every context entity it reads, and `->setCacheMaxAge()` for time-based rules. The user dependency adds no cache tags for the anonymous user, so a check whose answer can vary for anonymous visitors must also call `->cachePerPermissions()` or `->cachePerUser()`.
 
 ### A `can()` / `abilityTo()` facade
 
-If your site wraps accounts in its own object, `AbilityAwareTrait` gives it `can()` (a boolean) and `abilityTo()` (the cache-aware `AccessResultInterface`). You supply the checker and the account:
+If your site wraps accounts in its own object, `AbilityAwareTrait` gives it `can()` (a boolean) and `abilityTo()` (the cache-aware `AccessResult`). You supply the checker and the account:
 
 ```php
 use Drupal\Core\Session\AccountInterface;
@@ -234,7 +238,11 @@ class MyWrappedUser {
 // $user->abilityTo(SiteAbility::PublishArticle, new NodeContext($node)) returns the result with its cache metadata.
 ```
 
-Use `abilityTo()` for anything that renders; `can()` discards the cache metadata.
+Use `abilityTo()` for anything that renders; `can()` discards the cache metadata. When the wrapper is itself a service, inject the checker with `@user_ability.checker`.
+
+### Route access
+
+The module adds no route requirement of its own. To guard a route with an ability, call the checker from your own `_custom_access` callback and return its result.
 
 ### When something is wrong
 
@@ -244,6 +252,9 @@ Use `abilityTo()` for anything that renders; `can()` discards the cache metadata
 | The account no longer resolves to a user (deleted mid-request)                                    | `check()` returns `AccessResult::forbidden()` and logs a warning.                               |
 | The context is not an instance of the check's `getContextClass()`                                 | `check()` throws `\InvalidArgumentException`.                                                   |
 | A tagged service has no `ability` attribute, names an undefined case, or starts the case with `\` | The container build fails with a `\LogicException` naming the service.                          |
+| A service has more than one `ability_check` tag, or two services name the same ability            | The container build fails with a `\LogicException` naming the service(s).                       |
+
+The forbidden results in this table carry no cache metadata.
 
 ### Running the tests
 
@@ -252,3 +263,7 @@ The unit tests live in `tests/src/Unit/AbilityCheckerTest.php` and extend Drupal
 ```bash
 vendor/bin/phpunit -c web/core web/modules/custom/user_ability/tests
 ```
+
+## License
+
+[GPL-2.0-or-later](../../../LICENSE)
