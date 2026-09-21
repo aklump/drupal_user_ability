@@ -2,7 +2,7 @@
 
 namespace Drupal\user_ability;
 
-use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Session\AccountInterface;
 
 /**
@@ -19,7 +19,7 @@ trait AbilityAwareTrait {
    *
    * @see \Drupal\user_ability\AbilityChecker::check()
    */
-  public function abilityTo(AbilityInterface $ability, ?AbilityContextInterface $context = NULL): AccessResultInterface {
+  public function abilityTo(AbilityInterface $ability, ?AbilityContextInterface $context = NULL): AccessResult {
     return $this->getAbilityChecker()->check($ability, $this->getAbilityAccount(), $context);
   }
 

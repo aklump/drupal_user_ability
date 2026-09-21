@@ -63,7 +63,8 @@ class AbilityChecker {
    *   What is being asked about, beyond the account.
    *
    * @return \Drupal\Core\Access\AccessResult
-   *   The cache-aware access result. AccessResult::forbidden() when no
+   *   The cache-aware access result, with $account's user entity always
+   *   added as a cacheable dependency. AccessResult::forbidden() when no
    *   check is registered for the ability, or when the account no longer
    *   resolves to a real user — both cases are logged, never thrown.
    */
@@ -96,7 +97,7 @@ class AbilityChecker {
       ));
     }
 
-    return $check->abilityAccess($user, $context);
+    return $check->abilityAccess($user, $context)->addCacheableDependency($user);
   }
 
   /**

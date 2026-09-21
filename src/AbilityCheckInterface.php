@@ -2,7 +2,7 @@
 
 namespace Drupal\user_ability;
 
-use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\user\UserInterface;
 
@@ -17,20 +17,22 @@ interface AbilityCheckInterface {
   /**
    * Decides whether the given user has the ability this check implements.
    *
-   * The result MUST carry cache metadata — at minimum
-   * ->addCacheableDependency($user), plus ->cachePerPermissions() when
+   * The result MUST carry cache metadata — ->cachePerPermissions() when
    * hasPermission() is a term, ->addCacheableDependency() for any context
    * dependency consulted, and ->setCacheMaxAge() for time-based abilities.
-   * Note that addCacheableDependency() contributes no cache tags for
-   * anonymous users (uid 0 reports isNew() === TRUE), so a check whose
-   * answer can vary for anonymous users must also call
-   * ->cachePerPermissions() or ->cachePerUser().
+   * $user itself need not be added: AbilityChecker::check() adds it as a
+   * cacheable dependency to every result, which is why this returns the
+   * concrete AccessResult rather than AccessResultInterface. Note that
+   * addCacheableDependency() contributes no cache tags for anonymous users
+   * (uid 0 reports isNew() === TRUE), so a check whose answer can vary for
+   * anonymous users must still call ->cachePerPermissions() or
+   * ->cachePerUser().
    *
    * $context is always populated by this point — AbilityChecker substitutes
    * \Drupal\user_ability\NullContext() before calling in if the caller
    * passed none, so implementations never receive NULL here.
    */
-  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface;
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult;
 
   /**
    * The concrete context class this check requires.

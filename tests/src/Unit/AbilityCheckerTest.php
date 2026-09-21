@@ -4,6 +4,7 @@ namespace Drupal\Tests\user_ability\Unit;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Tests\UnitTestCase;
@@ -45,11 +46,27 @@ class AbilityCheckerTest extends UnitTestCase {
   }
 
   /**
+   * Builds a user double whose cache metadata is well-formed.
+   *
+   * CacheableDependencyInterface's getters carry no native return types, so
+   * an unstubbed mock returns NULL from them, which check() would then fail
+   * to merge via ->addCacheableDependency($user).
+   */
+  private function mockUser(array $cacheTags = []): UserInterface {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getCacheTags')->willReturn($cacheTags);
+    $user->method('getCacheContexts')->willReturn([]);
+    $user->method('getCacheMaxAge')->willReturn(Cache::PERMANENT);
+
+    return $user;
+  }
+
+  /**
    * @covers ::check
    * @covers ::addCheck
    */
   public function testCheckDispatchesToRegisteredCheckWithExplicitContext(): void {
-    $user = $this->createMock(UserInterface::class);
+    $user = $this->mockUser();
     $account = $this->createMock(AccountInterface::class);
     $context = new FixtureContext();
     $expected = AccessResult::allowed();
@@ -77,7 +94,7 @@ class AbilityCheckerTest extends UnitTestCase {
    * @covers ::check
    */
   public function testCheckSubstitutesDefaultContextWhenNoneGiven(): void {
-    $user = $this->createMock(UserInterface::class);
+    $user = $this->mockUser();
     $account = $this->createMock(AccountInterface::class);
     $expected = AccessResult::forbidden();
 
@@ -140,7 +157,7 @@ class AbilityCheckerTest extends UnitTestCase {
    * @covers ::check
    */
   public function testCheckThrowsWhenContextDoesNotMatchRequiredClass(): void {
-    $user = $this->createMock(UserInterface::class);
+    $user = $this->mockUser();
     $account = $this->createMock(AccountInterface::class);
 
     $check = new FixtureCheck(FixtureContext::class, AccessResult::allowed());
@@ -157,6 +174,27 @@ class AbilityCheckerTest extends UnitTestCase {
     finally {
       $this->assertSame(0, $check->callCount);
     }
+  }
+
+  /**
+   * @covers ::check
+   */
+  public function testCheckAddsUserAsCacheableDependency(): void {
+    $user = $this->mockUser(['user:7']);
+    $account = $this->createMock(AccountInterface::class);
+
+    // The check deliberately omits ->addCacheableDependency($user); the
+    // checker is responsible for adding it.
+    $check = new FixtureCheck(NullContext::class, AccessResult::allowed());
+
+    $logger = $this->createMock(LoggerInterface::class);
+
+    $checker = $this->checkerWithUser($logger, $user);
+    $checker->addCheck(FixtureAbility::class . '::' . FixtureAbility::DoThing->name, $check);
+
+    $result = $checker->check(FixtureAbility::DoThing, $account);
+    $this->assertTrue($result->isAllowed());
+    $this->assertContains('user:7', $result->getCacheTags());
   }
 
 }
@@ -200,7 +238,7 @@ final class FixtureCheck implements AbilityCheckInterface {
 
   public function __construct(
     string $contextClass,
-    private readonly AccessResultInterface $result,
+    private readonly AccessResult $result,
   ) {
     // Instance state can't back a static method, so the class-string each
     // test wants getContextClass() to return is stashed here instead.
@@ -211,7 +249,7 @@ final class FixtureCheck implements AbilityCheckInterface {
     return self::$activeContextClass;
   }
 
-  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface {
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult {
     $this->callCount++;
     $this->receivedUser = $user;
     $this->receivedContext = $context;
