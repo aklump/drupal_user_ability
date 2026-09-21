@@ -151,6 +151,7 @@ class AbilityCheckerTest extends UnitTestCase {
 
     $result = $checker->check(FixtureAbility::DoThing, $account);
     $this->assertFalse($result->isAllowed());
+    $this->assertSame(0, $result->getCacheMaxAge());
   }
 
   /**

@@ -63,10 +63,12 @@ class AbilityChecker {
    *   What is being asked about, beyond the account.
    *
    * @return \Drupal\Core\Access\AccessResult
-   *   The cache-aware access result, with $account's user entity always
-   *   added as a cacheable dependency. AccessResult::forbidden() when no
-   *   check is registered for the ability, or when the account no longer
-   *   resolves to a real user — both cases are logged, never thrown.
+   *   The cache-aware access result, with $account's user entity added as a
+   *   cacheable dependency whenever a check runs. AccessResult::forbidden()
+   *   with no cache metadata when no check is registered for the ability;
+   *   an uncacheable (max-age 0) AccessResult::forbidden() when the account
+   *   no longer resolves to a real user. Both cases are logged, never
+   *   thrown.
    */
   public function check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult {
     $key = $ability::class . '::' . $ability->name;
@@ -85,7 +87,9 @@ class AbilityChecker {
         '@uid' => $account->id(),
       ]);
 
-      return AccessResult::forbidden();
+      // The answer is about this one account, so it must not be cached as
+      // if it applied to everyone.
+      return AccessResult::forbidden()->setCacheMaxAge(0);
     }
 
     $context ??= new NullContext();
