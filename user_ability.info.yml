@@ -1,5 +1,5 @@
 name: User Ability
 type: module
 description: 'Generic mechanism for asking "can this user do X" — the ability check dispatcher, its contracts, and their tagged-service registration.'
-package: Other
+package: User access
 core_version_requirement: ^9 || ^10

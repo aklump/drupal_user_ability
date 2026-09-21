@@ -28,6 +28,9 @@ class AbilityCheckCollectorPass implements CompilerPassInterface {
       if (!$key) {
         throw new \LogicException(sprintf('Service "%s" is tagged "ability_check" but declares no "ability" attribute.', $id));
       }
+      if (str_starts_with($key, '\\')) {
+        throw new \LogicException(sprintf('Ability check "%s" references ability key that starts with a backslash.', $id));
+      }
       if (!defined($key)) {
         throw new \LogicException(sprintf('Ability check "%s" references undefined ability "%s".', $id, $key));
       }

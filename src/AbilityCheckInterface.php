@@ -3,6 +3,7 @@
 namespace Drupal\user_ability;
 
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\user\UserInterface;
 
 /**
@@ -25,19 +26,43 @@ interface AbilityCheckInterface {
    * answer can vary for anonymous users must also call
    * ->cachePerPermissions() or ->cachePerUser().
    *
-   * $context is always populated by this point — AbilityChecker
-   * substitutes getDefaultContext() before calling in if the caller passed
-   * none, so implementations never receive NULL here.
+   * $context is always populated by this point — AbilityChecker substitutes
+   * \Drupal\user_ability\NullContext() before calling in if the caller
+   * passed none, so implementations never receive NULL here.
    */
   public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface;
 
   /**
-   * The context to use when a caller supplies none.
+   * The concrete context class this check requires.
    *
-   * Every implementer answers this explicitly, even trivially (e.g.
-   * returning a context with all-NULL properties), so the dispatcher never
-   * needs to guess.
+   * AbilityChecker::check() verifies $context is an instance of this class
+   * once, centrally, before calling abilityAccess() — implementations never
+   * need to validate the context's shape themselves.
+   *
+   * Static, like getBusinessRule(): this describes the check's type, not an
+   * instance, and must not vary by account or context.
+   *
+   * @return class-string<\Drupal\user_ability\AbilityContextInterface>
    */
-  public function getDefaultContext(): AbilityContextInterface;
+  public static function getContextClass(): string;
+
+  /**
+   * A stakeholder-facing statement of the rule this check enforces.
+   *
+   * Written for whoever owns the business decision, not the developer who
+   * implemented it: name the people/condition and the outcome — e.g.
+   * "Managers can approve expense reports up to $500" or "Members must
+   * complete onboarding before posting" — not the mechanics used to
+   * enforce it (roles, permissions, entity grants, etc.). This is what
+   * gets shown wherever abilities are documented or audited independent
+   * of code, so a non-developer can confirm the system does what the
+   * business agreed it should.
+   *
+   * Static: this describes the check's type, not an instance — it does
+   * not depend on, and must not vary by, any account or context. A
+   * TranslatableMarkup, not a plain string, because it is surfaced to end
+   * users/administrators, not just read by developers.
+   */
+  public static function getBusinessRule(): TranslatableMarkup;
 
 }

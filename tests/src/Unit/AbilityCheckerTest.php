@@ -5,11 +5,13 @@ namespace Drupal\Tests\user_ability\Unit;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Drupal\user_ability\AbilityChecker;
 use Drupal\user_ability\AbilityCheckInterface;
 use Drupal\user_ability\AbilityContextInterface;
+use Drupal\user_ability\NullContext;
 use Drupal\user_ability\AbilityInterface;
 use Psr\Log\LoggerInterface;
 
@@ -52,12 +54,11 @@ class AbilityCheckerTest extends UnitTestCase {
     $context = new FixtureContext();
     $expected = AccessResult::allowed();
 
-    $check = $this->createMock(AbilityCheckInterface::class);
-    $check->expects($this->once())
-      ->method('abilityAccess')
-      ->with($user, $context)
-      ->willReturn($expected);
-    $check->expects($this->never())->method('getDefaultContext');
+    // FixtureCheckInterface::getContextClass() is static, and PHPUnit's mock
+    // generator unconditionally throws for any static method invoked on a
+    // createMock()'d object (see mocked_static_method.tpl) — so a hand-written
+    // fixture double is used here instead of createMock().
+    $check = new FixtureCheck(FixtureContext::class, $expected);
 
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->never())->method('warning');
@@ -67,6 +68,9 @@ class AbilityCheckerTest extends UnitTestCase {
 
     $result = $checker->check(FixtureAbility::DoThing, $account, $context);
     $this->assertSame($expected, $result);
+    $this->assertSame(1, $check->callCount);
+    $this->assertSame($user, $check->receivedUser);
+    $this->assertSame($context, $check->receivedContext);
   }
 
   /**
@@ -75,17 +79,9 @@ class AbilityCheckerTest extends UnitTestCase {
   public function testCheckSubstitutesDefaultContextWhenNoneGiven(): void {
     $user = $this->createMock(UserInterface::class);
     $account = $this->createMock(AccountInterface::class);
-    $default_context = new FixtureContext();
     $expected = AccessResult::forbidden();
 
-    $check = $this->createMock(AbilityCheckInterface::class);
-    $check->expects($this->once())
-      ->method('getDefaultContext')
-      ->willReturn($default_context);
-    $check->expects($this->once())
-      ->method('abilityAccess')
-      ->with($user, $default_context)
-      ->willReturn($expected);
+    $check = new FixtureCheck(NullContext::class, $expected);
 
     $logger = $this->createMock(LoggerInterface::class);
 
@@ -94,6 +90,8 @@ class AbilityCheckerTest extends UnitTestCase {
 
     $result = $checker->check(FixtureAbility::DoThing, $account);
     $this->assertSame($expected, $result);
+    $this->assertSame(1, $check->callCount);
+    $this->assertEquals(new NullContext(), $check->receivedContext);
   }
 
   /**
@@ -138,20 +136,91 @@ class AbilityCheckerTest extends UnitTestCase {
     $this->assertFalse($result->isAllowed());
   }
 
+  /**
+   * @covers ::check
+   */
+  public function testCheckThrowsWhenContextDoesNotMatchRequiredClass(): void {
+    $user = $this->createMock(UserInterface::class);
+    $account = $this->createMock(AccountInterface::class);
+
+    $check = new FixtureCheck(FixtureContext::class, AccessResult::allowed());
+
+    $logger = $this->createMock(LoggerInterface::class);
+
+    $checker = $this->checkerWithUser($logger, $user);
+    $checker->addCheck(FixtureAbility::class . '::' . FixtureAbility::DoThing->name, $check);
+
+    $this->expectException(\InvalidArgumentException::class);
+    try {
+      $checker->check(FixtureAbility::DoThing, $account, new NullContext());
+    }
+    finally {
+      $this->assertSame(0, $check->callCount);
+    }
+  }
+
 }
 
 /**
- * A throwaway ability, declared for this test only — no Commons imports.
+ * A throwaway ability, declared for this test only since consumers define.
  */
 enum FixtureAbility implements AbilityInterface {
+
   case DoThing;
 
   public function jsonSerialize(): mixed {
     return $this->name;
   }
+
 }
 
 /**
- * A throwaway context, declared for this test only — no Commons imports.
+ * A throwaway context, declared for this test only since consumers define
+ * their own concrete AbilityContextInterface shapes.
  */
 final class FixtureContext implements AbilityContextInterface {}
+
+/**
+ * A throwaway check, declared for this test only.
+ *
+ * A hand-written double rather than createMock(AbilityCheckInterface::class)
+ * because getContextClass() is static, and PHPUnit's mock generator
+ * unconditionally throws BadMethodCallException for any static method
+ * invoked on a mocked object — static methods cannot be stubbed.
+ */
+final class FixtureCheck implements AbilityCheckInterface {
+
+  public int $callCount = 0;
+
+  public ?UserInterface $receivedUser = NULL;
+
+  public ?AbilityContextInterface $receivedContext = NULL;
+
+  private static string $activeContextClass = FixtureContext::class;
+
+  public function __construct(
+    string $contextClass,
+    private readonly AccessResultInterface $result,
+  ) {
+    // Instance state can't back a static method, so the class-string each
+    // test wants getContextClass() to return is stashed here instead.
+    self::$activeContextClass = $contextClass;
+  }
+
+  public static function getContextClass(): string {
+    return self::$activeContextClass;
+  }
+
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResultInterface {
+    $this->callCount++;
+    $this->receivedUser = $user;
+    $this->receivedContext = $context;
+
+    return $this->result;
+  }
+
+  public static function getBusinessRule(): TranslatableMarkup {
+    return new TranslatableMarkup('Fixture business rule.');
+  }
+
+}

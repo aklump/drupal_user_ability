@@ -3,7 +3,6 @@
 namespace Drupal\user_ability;
 
 use Drupal\Core\Access\AccessResult;
-use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -46,6 +45,9 @@ class AbilityChecker {
    *   The check to dispatch to for this ability.
    */
   public function addCheck(string $key, AbilityCheckInterface $check): void {
+    if (str_starts_with($key, '\\')) {
+      throw new \InvalidArgumentException('Ability key must not start with a backslash');
+    }
     $this->checks[$key] = $check;
   }
 
@@ -57,16 +59,15 @@ class AbilityChecker {
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The account asking. Normalized once to \Drupal\user\UserInterface
    *   before being handed to the check.
-   * @param \Drupal\user_ability\AbilityContextInterface|null $context
-   *   What is being asked about, beyond the account. NULL to let the check
-   *   supply its own default via getDefaultContext().
+   * @param \Drupal\user_ability\AbilityContextInterface $context
+   *   What is being asked about, beyond the account.
    *
-   * @return \Drupal\Core\Access\AccessResultInterface
+   * @return \Drupal\Core\Access\AccessResult
    *   The cache-aware access result. AccessResult::forbidden() when no
    *   check is registered for the ability, or when the account no longer
    *   resolves to a real user — both cases are logged, never thrown.
    */
-  public function check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResultInterface {
+  public function check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult {
     $key = $ability::class . '::' . $ability->name;
     $check = $this->checks[$key] ?? NULL;
     if (!$check) {
@@ -86,7 +87,16 @@ class AbilityChecker {
       return AccessResult::forbidden();
     }
 
-    return $check->abilityAccess($user, $context ?? $check->getDefaultContext());
+    $context ??= new NullContext();
+    $requiredClass = $check->getContextClass();
+    if (!$context instanceof $requiredClass) {
+      throw new \InvalidArgumentException(sprintf(
+        'Ability check %s requires %s, got %s.',
+        $check::class, $requiredClass, $context::class,
+      ));
+    }
+
+    return $check->abilityAccess($user, $context);
   }
 
   /**
