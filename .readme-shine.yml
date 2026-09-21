@@ -1,0 +1,13 @@
+# readme-shine settings for this project. Every key is optional.
+# The full list is in references/config-example.md in the skill directory.
+
+# The template to fill. Edit that file to change the sections and the voice.
+template: '~/.config/readme-shine/templates/default.md'
+
+# Only set `output` to override where the README is written. Left unset, a
+# governing skill (one that knows the README is compiled from a source page)
+# decides, and the default is README.md at the project root.
+# output: README.md
+
+# Show an outline for approval before drafting. Set to false to skip it.
+# confirm: true   # the default; set false to skip the outline for approval
