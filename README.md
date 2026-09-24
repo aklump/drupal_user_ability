@@ -8,6 +8,8 @@
 
 Access logic in a Drupal site tends to leak everywhere: a controller checks a permission, a form checks a role, a block checks ownership, and nobody can say in one place what "can publish an article" actually means. User Ability gives each business capability a name (an enum case such as `SiteAbility::PublishArticle`), puts the rule that decides it in one dedicated check service, and routes every question through a single dispatcher, `user_ability.checker`. The answer is always a cache-aware `AccessResult`, so it is safe to use in render arrays and route access. Each check also states its rule in plain language through `getBusinessRule()`, written for whoever owns the business decision. The module does not display these statements itself; list them wherever you document or audit your abilities, so a non-developer can confirm the system enforces what the business agreed to.
 
+A check can optionally decide its answer by classifying the user into named segments — leaders, administrators, buyers, sellers, whatever your site's rules group users into — instead of writing permission/role logic inline. See "The segment mechanism (optional)" below.
+
 ## Quick Start
 
 Enable the module, then add these three pieces to one of your own modules (`my_module` here).
@@ -121,6 +123,97 @@ Enabling it registers the `user_ability.checker` service and a `user_ability` lo
 - **Context** (`AbilityContextInterface`): a value object carrying whatever a check needs beyond the account: a node, a group, a status. It is an empty marker interface; you define one class per shape.
 - **Check** (`AbilityCheckInterface`): one service per ability that composes permissions, roles, ownership and anything else into one `AccessResult`, with its cache metadata.
 - **Checker** (`AbilityCheckerInterface`, implemented by `AbilityChecker`, service `user_ability.checker`): the dispatcher. Its one public question is `check(AbilityInterface $ability, AccountInterface $account, ?AbilityContextInterface $context = NULL): AccessResult`. It loads the account as a user entity (the anonymous user for an anonymous account) before handing it to the check, which is why checks receive a `UserInterface`.
+
+### The segment mechanism (optional)
+
+A check can decide its answer by classifying the user into named segments
+instead of writing permission/role logic inline. Three pieces, parallel to
+the four above:
+
+- **Segment** (`UserSegmentInterface`): an enum naming a fixed set of user
+  buckets — leaders, administrators, buyers, sellers, whatever your site's
+  rules group users into. A bare marker, like `AbilityInterface`.
+- **Segment resolver** (`UserSegmentResolverInterface`): one service per
+  site that decides membership, returning a cache-aware `AccessResult` that
+  is `allowed()` or `neutral()` — never `forbidden()`.
+- **`UserSegmentAwareTrait`**: gives a check `userIsAny()` (allows if the
+  user is in any of the given segments) and `userIsNone()` (vetoes if they
+  are). A check `use`s the trait and supplies its resolver via
+  `getSegmentResolver()`, the same abstract-getter shape `AbilityAwareTrait`
+  uses for its checker/account.
+
+An enum naming your site's buckets, implementing the marker interface:
+
+```php
+// my_module/src/Enum/SiteSegment.php
+namespace Drupal\my_module\Enum;
+
+use Drupal\user_ability\UserSegmentInterface;
+
+enum SiteSegment implements UserSegmentInterface {
+  case Leader;
+  case Administrator;
+  case Buyer;
+  case Seller;
+}
+```
+
+A check composes segments instead of inlining the membership test:
+
+```php
+final class ApproveOrderCheck implements AbilityCheckInterface {
+  use UserSegmentAwareTrait;
+
+  public function __construct(private readonly UserSegmentResolverInterface $segmentResolver) {}
+
+  protected function getSegmentResolver(): UserSegmentResolverInterface {
+    return $this->segmentResolver;
+  }
+
+  public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult {
+    return $this->userIsAny($user, $context, SiteSegment::Leader, SiteSegment::Administrator);
+  }
+}
+```
+
+See `AGENTS.md` for the resolver invariant and why there is no
+`userIsEvery()` yet.
+
+How the two mechanisms relate:
+
+```mermaid
+classDiagram
+  class AbilityCheckerInterface {
+    +check(ability, account, context) AccessResult
+  }
+  class AbilityCheckInterface {
+    +abilityAccess(user, context) AccessResult
+    +getContextClass() string
+    +getBusinessRule() TranslatableMarkup
+  }
+  class UserSegmentAwareTrait {
+    +userIsAny(user, context, segments) AccessResult
+    +userIsNone(user, context, segments) AccessResult
+    #getSegmentResolver() UserSegmentResolverInterface
+  }
+  class UserSegmentResolverInterface {
+    +resolve(user, segment, context) AccessResult
+  }
+  class UserSegmentInterface
+
+  AbilityCheckerInterface ..> AbilityCheckInterface : dispatches to
+  AbilityCheckInterface <|.. YourCheck
+  YourCheck ..> UserSegmentAwareTrait : uses
+  UserSegmentAwareTrait ..> UserSegmentResolverInterface : calls resolve()
+  UserSegmentResolverInterface ..> UserSegmentInterface : classifies against
+  UserSegmentResolverInterface <|.. YourSegmentResolver
+  UserSegmentInterface <|.. YourSegmentEnum
+```
+
+A check written against `UserSegmentAwareTrait` still dispatches through the
+same `AbilityCheckerInterface`/`AbilityChecker` as any other check — it just
+decides its own `abilityAccess()` by composing segments instead of writing
+permission logic inline.
 
 ### Registering checks
 
@@ -253,7 +346,7 @@ The no-check result carries no cache metadata, since it only changes when the co
 
 ### Running the tests
 
-The unit tests live in `tests/src/Unit/`: `AbilityCheckerTest.php` covers the checker and `AbilityCheckCollectorPassTest.php` covers the tag rules. They extend Drupal's `UnitTestCase`, so run them from a Drupal site that has the module installed:
+The unit tests live in `tests/src/Unit/`: `AbilityCheckerTest.php` covers the checker, `AbilityCheckCollectorPassTest.php` covers the tag rules, and `UserSegmentAwareTraitTest.php` covers the segment composition helpers. They extend Drupal's `UnitTestCase`, so run them from a Drupal site that has the module installed:
 
 ```bash
 vendor/bin/phpunit -c web/core web/modules/custom/user_ability/tests
