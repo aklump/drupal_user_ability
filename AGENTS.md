@@ -17,10 +17,10 @@ can never poison the `orIf()` chain inside `userIsAny()`.
 `userIsNone()` (a veto). It does not offer an AND-of-segments helper,
 because no consumer has needed one yet.
 
-Beware: "and" in a rule sentence is usually still an OR — "Administrators,
-site administrators and stewards can manage the group" lists three
-audiences who each qualify alone. Add the AND helper only for a rule that
-requires one person to be in two segments **at once**.
+Beware: "and" in a rule sentence is usually still an OR — "Leaders,
+administrators and buyers can approve the order" lists three audiences who
+each qualify alone. Add the AND helper only for a rule that requires one
+person to be in two segments **at once**.
 
 Until then, an AND is expressible at the call site without the helper:
 

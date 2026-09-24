@@ -8,7 +8,7 @@
 
 Access logic in a Drupal site tends to leak everywhere: a controller checks a permission, a form checks a role, a block checks ownership, and nobody can say in one place what "can publish an article" actually means. User Ability gives each business capability a name (an enum case such as `SiteAbility::PublishArticle`), puts the rule that decides it in one dedicated check service, and routes every question through a single dispatcher, `user_ability.checker`. The answer is always a cache-aware `AccessResult`, so it is safe to use in render arrays and route access. Each check also states its rule in plain language through `getBusinessRule()`, written for whoever owns the business decision. The module does not display these statements itself; list them wherever you document or audit your abilities, so a non-developer can confirm the system enforces what the business agreed to.
 
-A check can optionally decide its answer by classifying the user into named segments — administrators, stewards, whatever your site's rules group users into — instead of writing permission/role logic inline. See "The segment mechanism (optional)" below.
+A check can optionally decide its answer by classifying the user into named segments — leaders, administrators, buyers, sellers, whatever your site's rules group users into — instead of writing permission/role logic inline. See "The segment mechanism (optional)" below.
 
 ## Quick Start
 
@@ -131,8 +131,8 @@ instead of writing permission/role logic inline. Three pieces, parallel to
 the four above:
 
 - **Segment** (`UserSegmentInterface`): an enum naming a fixed set of user
-  buckets — administrators, stewards, whatever your site's rules group
-  users into. A bare marker, like `AbilityInterface`.
+  buckets — leaders, administrators, buyers, sellers, whatever your site's
+  rules group users into. A bare marker, like `AbilityInterface`.
 - **Segment resolver** (`UserSegmentResolverInterface`): one service per
   site that decides membership, returning a cache-aware `AccessResult` that
   is `allowed()` or `neutral()` — never `forbidden()`.
@@ -151,15 +151,17 @@ namespace Drupal\my_module\Enum;
 use Drupal\user_ability\UserSegmentInterface;
 
 enum SiteSegment implements UserSegmentInterface {
+  case Leader;
   case Administrator;
-  case Manager;
+  case Buyer;
+  case Seller;
 }
 ```
 
 A check composes segments instead of inlining the membership test:
 
 ```php
-final class ManageWidgetsCheck implements AbilityCheckInterface {
+final class ApproveOrderCheck implements AbilityCheckInterface {
   use UserSegmentAwareTrait;
 
   public function __construct(private readonly UserSegmentResolverInterface $segmentResolver) {}
@@ -169,7 +171,7 @@ final class ManageWidgetsCheck implements AbilityCheckInterface {
   }
 
   public function abilityAccess(UserInterface $user, AbilityContextInterface $context): AccessResult {
-    return $this->userIsAny($user, $context, SiteSegment::Administrator, SiteSegment::Manager);
+    return $this->userIsAny($user, $context, SiteSegment::Leader, SiteSegment::Administrator);
   }
 }
 ```
