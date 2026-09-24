@@ -1,8 +1,13 @@
+<!--
+id: readme
+tags: ''
+-->
+
 # user_ability
 
 > Ask "can this user do X?" in Drupal through named, cache-aware ability checks instead of scattered permission logic.
 
-![general](images/hero.jpg)
+![general](../../images/hero.jpg)
 
 ## Summary
 
@@ -354,4 +359,4 @@ vendor/bin/phpunit -c web/core web/modules/custom/user_ability/tests
 
 ## License
 
-[GPL-2.0-or-later](LICENSE)
+[GPL-2.0-or-later](../../../LICENSE)
